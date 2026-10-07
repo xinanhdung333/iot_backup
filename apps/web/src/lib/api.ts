@@ -1,0 +1,146 @@
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || API_URL;
+
+export class NetworkError extends Error {}
+
+let csrfTokenCache: string | null = null;
+let csrfTokenRequest: Promise<string> | null = null;
+
+export function clearCsrfToken() {
+  csrfTokenCache = null;
+}
+
+export async function getCsrfToken(force = false) {
+  if (typeof window === "undefined") throw new NetworkError("CSRF token chỉ khả dụng trong trình duyệt.");
+  if (!force && csrfTokenCache) return csrfTokenCache;
+  if (!force && csrfTokenRequest) return csrfTokenRequest;
+  const request = fetch(`${API_URL}/api/csrf-token`, {
+    credentials: "include",
+    signal: AbortSignal.timeout(10000)
+  }).then(async (response) => {
+    if (!response.ok) throw new NetworkError("Không lấy được CSRF token.");
+    const token = (await response.json() as { token?: string }).token;
+    if (!token || !/^[a-f0-9]{64}$/i.test(token)) throw new NetworkError("CSRF token không hợp lệ.");
+    csrfTokenCache = token;
+    return token;
+  });
+  if (force) return request;
+  csrfTokenRequest = request.finally(() => {
+    csrfTokenRequest = null;
+  });
+  return csrfTokenRequest;
+}
+
+export type Product = {
+  id: string;
+  slug: string;
+  name: string;
+  type: "IOT_MINI" | "IOT_PRO" | "COMPONENT";
+  productType?: "LINH_KIEN" | "THIET_BI_BAN" | "THIET_BI_THUE" | null;
+  priceSell: number;
+  priceRentMonth: number;
+  depositFee: number;
+  stock: number;
+  images?: string[];
+  specs: Record<string, string>;
+};
+
+export type Show = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  bannerUrl: string;
+  themeColor: string;
+  location: string;
+  startAt: string;
+  ticketPrice: number;
+  totalTickets: number;
+  soldTickets: number;
+};
+
+export type StaticPage = {
+  id: string;
+  slug: string;
+  navLabel: string;
+  title: string;
+  description: string;
+  heroImage: string;
+  ctaPrimary: { label: string; href: string };
+  ctaSecondary?: { label: string; href: string } | null;
+  sections: Array<{
+    kind: "cards" | "band" | "stats" | "pricing" | "timeline";
+    title: string;
+    subtitle?: string;
+    body?: string;
+    items?: Array<{ title?: string; body?: string; href?: string; value?: string; label?: string; price?: string }>;
+  }>;
+  sortOrder: number;
+  published: boolean;
+};
+
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const shouldRevalidate = !init?.method && !init?.cache;
+  const token = typeof window !== "undefined" ? window.localStorage.getItem("smartqr_token") : null;
+  const isStateChanging = Boolean(init?.method && !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase()));
+  const send = async (csrfToken: string | null) => fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers || {})
+      },
+      credentials: "include",
+      signal: init?.signal ?? AbortSignal.timeout(10000),
+      next: shouldRevalidate ? { revalidate: 30 } : undefined
+  });
+  let res: Response;
+  try {
+    const csrfToken = isStateChanging && typeof window !== "undefined" ? await getCsrfToken() : null;
+    res = await send(csrfToken);
+    if (isStateChanging && res.status === 403) {
+      const body = await res.clone().json().catch(() => null) as { error?: string } | null;
+      if (body?.error === "csrf_invalid") {
+        clearCsrfToken();
+        res = await send(await getCsrfToken(true));
+      }
+    }
+  } catch (error) {
+    if (error instanceof NetworkError) throw error;
+    const message = error instanceof DOMException && error.name === "TimeoutError"
+      ? "API phản hồi quá lâu. Thử tải lại hoặc kiểm tra backend."
+      : `Không kết nối được API tại ${API_URL}. Kiểm tra backend đang chạy.`;
+    throw new NetworkError(message);
+  }
+  if (res.status === 204) return undefined as T;
+  if (res.redirected && res.url.includes("/dang-nhap")) {
+    if (typeof window !== "undefined") window.location.href = "/dang-nhap";
+    return new Promise<T>(() => {});
+  }
+  const isAuthRequest = path === "/auth/login" || path === "/auth/register";
+  if (res.status === 401 && !isAuthRequest && !path.startsWith("/api/v1/")) {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("smartqr_token");
+      const next = `${window.location.pathname}${window.location.search}`;
+      window.location.href = `/dang-nhap?next=${encodeURIComponent(next)}`;
+      return new Promise<T>(() => {});
+    }
+    throw new NetworkError(`API yêu cầu đăng nhập cho ${path}.`);
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as { message?: string; error?: string };
+      throw new Error(body.message ?? body.error ?? text);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new Error(text);
+      throw error;
+    }
+  }
+  return res.json();
+}
+
+export function money(value: number) {
+  return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(value);
+}
