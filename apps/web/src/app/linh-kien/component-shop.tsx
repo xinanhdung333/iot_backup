@@ -19,7 +19,7 @@ export function ComponentShop({ products }: { products: Product[] }) {
   useEffect(() => {
     void api<Product[]>("/products", { cache: "no-store" }).then((result) => {
       if (!result) return;
-      setItems(result.filter((product) => product.type === "COMPONENT"));
+      setItems(result.filter((product) => product.productType === "LINH_KIEN"));
     });
   }, []);
 

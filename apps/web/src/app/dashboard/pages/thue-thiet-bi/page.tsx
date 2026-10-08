@@ -1,7 +1,7 @@
-import RentalPage, { dynamic } from "./rental-page";
+import { redirect } from "next/navigation";
 
-export { dynamic };
+export const dynamic = "force-dynamic";
 
 export default function DashboardRentalPage() {
-  return <RentalPage />;
+  redirect("/dashboard/pages/san-pham");
 }

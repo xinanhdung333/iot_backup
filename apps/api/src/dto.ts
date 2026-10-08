@@ -29,6 +29,7 @@ export class RentalDto {
   @IsIn(["rent", "buy"]) type!: "rent" | "buy";
   @IsInt() @Min(1) duration!: number;
   @IsInt() @Min(1) quantity!: number;
+  @IsOptional() @IsString() start_date?: string;
   @IsObject()
   shipping_address!: Record<string, unknown>;
   @IsBoolean() agree_damage_terms!: boolean;
@@ -73,6 +74,7 @@ export class BuyTicketDto {
 }
 
 export class PayosWebhookDto {
+  @IsOptional() @IsIn(["initial", "remaining"]) payment_stage?: "initial" | "remaining";
   @IsString() order_id!: string;
   @IsString() @IsOptional() kind?: "rental" | "ticket" | "api";
 }
@@ -120,7 +122,7 @@ export class AdminCreateProductDto {
   @IsIn(["IOT_MINI", "IOT_PRO", "COMPONENT"]) type!: "IOT_MINI" | "IOT_PRO" | "COMPONENT";
   @IsInt() @Min(0) price_sell!: number;
   @IsInt() @Min(0) price_rent_month!: number;
-  @IsInt() @Min(0) deposit_fee!: number;
+  @IsOptional() @IsInt() @Min(0) deposit_fee?: number;
   @IsInt() @Min(0) stock!: number;
   @IsArray() @IsString({ each: true }) images!: string[];
   @IsOptional() @IsObject() specs?: Record<string, unknown>;

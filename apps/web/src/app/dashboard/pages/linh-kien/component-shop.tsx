@@ -12,7 +12,7 @@ export function ComponentShop({ products }: { products: Product[] }) {
 
   useEffect(() => {
     void api<Product[]>("/products", { cache: "no-store" })
-      .then((result) => setItems(result.filter((item) => item.type === "COMPONENT")))
+      .then((result) => setItems(result.filter((item) => item.productType === "LINH_KIEN")))
       .catch(() => undefined);
   }, []);
 

@@ -26,6 +26,8 @@ export default function RentalsDashboardPage() {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [returningId, setReturningId] = useState("");
+  const [payingId, setPayingId] = useState("");
+  const [cancellingId, setCancellingId] = useState("");
 
   async function load() {
     setLoading(true);
@@ -57,6 +59,30 @@ export default function RentalsDashboardPage() {
     }
   }
 
+  async function payRemaining(order: ProductOrder) {
+    const remaining = Math.max(0, order.total - (order.depositAmount ?? 0));
+    if (!remaining) return;
+    setPayingId(order.id);
+    setActionError("");
+    try {
+      const result = await api<{ payment_demo_url: string }>(`/rentals/${order.id}/pay-remaining`, { method: "POST", body: JSON.stringify({ payment_method: "payos_demo" }) });
+      if (!result?.payment_demo_url) throw new Error("Khong nhan duoc link thanh toan.");
+      window.location.assign(result.payment_demo_url);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "Khong the tao thanh toan phan con lai.");
+    } finally {
+      setPayingId("");
+    }
+  }
+
+  async function cancelRental(order: ProductOrder) {
+    if (!window.confirm("Hủy đơn và hoàn tiền cọc?")) return;
+    setCancellingId(order.id); setActionError("");
+    try { await api(`/rentals/${order.id}/cancel`, { method: "PATCH", body: "{}" }); await load(); }
+    catch (reason) { setActionError(reason instanceof Error ? reason.message : "Khong the huy don thue."); }
+    finally { setCancellingId(""); }
+  }
+
   const rentalCount = data.rentals.filter((order) => orderKind(order).key === "rent").length;
   const kitBuyCount = data.rentals.filter((order) => orderKind(order).key === "kit_buy").length;
   const componentCount = data.rentals.filter((order) => orderKind(order).key === "component").length;
@@ -74,9 +100,9 @@ export default function RentalsDashboardPage() {
             <ShoppingBag size={16} />
             Mua linh kien
           </Link>
-          <Link href="/dashboard/pages/thue-thiet-bi" className="btn btn-primary text-sm">
+          <Link href="/dashboard/pages/san-pham" className="btn btn-primary text-sm">
             <Truck size={16} />
-            Thue thiet bi
+            Mua / thue thiet bi
           </Link>
         </div>
       </div>
@@ -107,6 +133,8 @@ export default function RentalsDashboardPage() {
               {data.rentals.map((order) => {
                 const kind = orderKind(order);
                 const canReturn = kind.key === "rent" && order.status === "ACTIVE";
+                const remaining = order.remainingAmount ?? Math.max(0, order.total - (order.depositAmount ?? 0));
+                const canPayRemainingToday = !order.startDate || new Date(order.startDate) <= new Date(Date.now() + 24 * 60 * 60 * 1000);
                 return (
                   <article key={order.id} className="grid grid-cols-[minmax(220px,1.4fr)_160px_150px_150px_180px] items-center gap-4 px-5 py-4">
                     <div className="min-w-0">
@@ -116,6 +144,7 @@ export default function RentalsDashboardPage() {
                         {kind.key === "rent" ? `, ${order.duration ?? 0} thang` : ""}
                       </p>
                       <p className="mt-1 text-xs text-zinc-400">{order.createdAt ? new Date(order.createdAt).toLocaleString("vi-VN") : "Dang cap nhat"}</p>
+                      {order.status === "ACTIVE" && <p className="mt-2 text-xs font-medium text-emerald-700">{remainingRentalText(order.startDate, order.duration)}</p>}
                     </div>
 
                     <div>
@@ -131,12 +160,16 @@ export default function RentalsDashboardPage() {
 
                     <b className="text-sm">{money(order.total)}</b>
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
                       {kind.key === "rent" ? (
-                        <button className="btn btn-secondary text-sm" disabled={!canReturn || returningId === order.id} onClick={() => void returnRental(order.id)}>
+                        <>
+                          {order.status === "DEPOSIT_PAID" && order.paymentDueAt && new Date(order.paymentDueAt) > new Date() && <button className="btn btn-secondary text-sm" disabled={cancellingId === order.id} onClick={() => void cancelRental(order)}>{cancellingId === order.id ? <Loader2 size={16} className="animate-spin" /> : null}Hủy và hoàn cọc</button>}
+                          {remaining > 0 && canPayRemainingToday && ["ACTIVE", "DEPOSIT_PAID"].includes(order.status) && order.remainingPaymentStatus === "PENDING" && <button className="btn btn-primary text-sm" disabled={payingId === order.id} onClick={() => void payRemaining(order)}>{payingId === order.id ? <Loader2 size={16} className="animate-spin" /> : null}Thanh toan con lai</button>}
+                          <button className="btn btn-secondary text-sm" disabled={!canReturn || returningId === order.id} onClick={() => void returnRental(order.id)}>
                           {returningId === order.id ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                           Tra thiet bi
-                        </button>
+                          </button>
+                        </>
                       ) : (
                         <span className="rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-500">Khong can tra</span>
                       )}
@@ -188,4 +221,13 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
       <b className="mt-1 block text-2xl">{value}</b>
     </div>
   );
+}
+
+function remainingRentalText(startDate?: string, duration?: number) {
+  if (!startDate || !duration) return "Thời hạn thuê đang được cập nhật";
+  const end = new Date(startDate);
+  end.setMonth(end.getMonth() + duration);
+  const days = Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000));
+  if (!days) return "Hết hạn thuê hôm nay";
+  return `Còn ${days} ngày · hết hạn ${end.toLocaleDateString("vi-VN")}`;
 }

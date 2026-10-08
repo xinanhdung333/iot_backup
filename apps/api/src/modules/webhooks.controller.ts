@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Headers, Post, Req, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Post, Query, Req, Res, UnauthorizedException } from "@nestjs/common";
 import crypto from "crypto";
-import { Request } from "express";
+import { Request, Response } from "express";
 import { PayosWebhookDto } from "../dto";
 import { PlatformService } from "../services/platform.service";
 import { RedisService } from "../services/redis.service";
@@ -9,20 +9,39 @@ import { RedisService } from "../services/redis.service";
 export class WebhooksController {
   constructor(private readonly platform: PlatformService, private readonly redis: RedisService) {}
 
+  @Get("payos-demo/qr")
+  async paymentQr(
+    @Query("order_id") orderId: string,
+    @Query("kind") kind: "rental" | "ticket" | "api",
+    @Query("payment_stage") stage: "initial" | "remaining" = "initial",
+    @Query("expires") expires: string,
+    @Query("signature") signature: string,
+    @Res() response: Response
+  ) {
+    if (!orderId || !["rental", "ticket", "api"].includes(kind) || !["initial", "remaining"].includes(stage) || !expires || !signature) {
+      throw new BadRequestException({ error: "invalid_payment_qr", message: "Payment QR link is invalid." });
+    }
+    await this.verifyPaymentLink(orderId, kind, stage, expires, signature, false);
+    const image = await this.platform.createPayosDemoQr(orderId, kind, stage);
+    response.set({ "Content-Type": "image/png", "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    response.send(image);
+  }
+
   @Post("payos-demo")
   async webhook(@Body() dto: PayosWebhookDto, @Headers("x-payos-timestamp") timestamp?: string, @Headers("x-payos-nonce") nonce?: string, @Headers("x-payos-signature") signature?: string, @Headers("x-payment-expires") paymentExpires?: string, @Headers("x-payment-signature") paymentSignature?: string, @Req() req?: Request & { rawBody?: Buffer }) {
     if (paymentExpires && paymentSignature) {
-      await this.verifyPaymentLink(dto.order_id, dto.kind, paymentExpires, paymentSignature);
+      await this.verifyPaymentLink(dto.order_id, dto.kind, dto.payment_stage, paymentExpires, paymentSignature);
     } else {
       await this.verifyPayosDemo(timestamp, nonce, signature, req?.rawBody ?? Buffer.from(JSON.stringify(dto)));
     }
-    return this.platform.webhook(dto.order_id, dto.kind);
+    return this.platform.webhook(dto.order_id, dto.kind, dto.payment_stage);
   }
 
   @Post("momo")
   async momo(@Body() dto: Record<string, unknown>) {
     this.verifyMomoIpn(dto);
-    const orderId = String(dto.orderId ?? "");
+    const rawOrderId = String(dto.orderId ?? "");
+    const orderId = rawOrderId.includes("-remaining-") ? rawOrderId.split("-remaining-")[0] : rawOrderId;
     if (!orderId) throw new BadRequestException({ error: "invalid_momo_order", message: "MoMo orderId is required" });
     if (Number(dto.resultCode) !== 0) {
       return { received: true, paid: false, order_id: orderId, result_code: dto.resultCode };
@@ -31,7 +50,7 @@ export class WebhooksController {
     return { received: true, paid: true, order_id: orderId, order: paid };
   }
 
-  private async verifyPaymentLink(orderId: string, kind: PayosWebhookDto["kind"], expires: string, signature: string) {
+  private async verifyPaymentLink(orderId: string, kind: PayosWebhookDto["kind"], stage: PayosWebhookDto["payment_stage"], expires: string, signature: string, consume = true) {
     if (process.env.PAYMENT_DEMO_MODE !== "true" || process.env.NODE_ENV === "production") {
       throw new ForbiddenException({ error: "demo_payment_disabled", message: "Demo payment callbacks are disabled" });
     }
@@ -41,15 +60,17 @@ export class WebhooksController {
     }
     const secret = process.env.PAYMENT_LINK_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "payment-link-dev-secret");
     if (!secret) throw new UnauthorizedException({ error: "payment_link_secret_required", message: "PAYMENT_LINK_SECRET is required" });
-    const expected = crypto.createHmac("sha256", secret).update(`${orderId}.${kind ?? "ticket"}.${expiry}`).digest("hex");
+    const expected = crypto.createHmac("sha256", secret).update(`${orderId}.${kind ?? "ticket"}.${stage ?? "initial"}.${expiry}`).digest("hex");
     const left = Buffer.from(signature);
     const right = Buffer.from(expected);
     if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
       throw new UnauthorizedException({ error: "invalid_payment_link", message: "Payment link signature is invalid" });
     }
-    const ttlSeconds = Math.max(1, expiry - Math.floor(Date.now() / 1000));
-    if (!(await this.redis.setIfAbsent(`payment:link:${signature}`, "1", ttlSeconds))) {
-      throw new UnauthorizedException({ error: "payment_link_replayed", message: "Payment link has already been used" });
+    if (consume) {
+      const ttlSeconds = Math.max(1, expiry - Math.floor(Date.now() / 1000));
+      if (!(await this.redis.setIfAbsent(`payment:link:${signature}`, "1", ttlSeconds))) {
+        throw new UnauthorizedException({ error: "payment_link_replayed", message: "Payment link has already been used" });
+      }
     }
   }
 

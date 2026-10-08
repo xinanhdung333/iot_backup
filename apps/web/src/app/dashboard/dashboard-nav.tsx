@@ -24,6 +24,7 @@ import {
   Moon,
   Package,
   Radio,
+  QrCode,
   ReceiptText,
   ScanLine,
   Search,
@@ -40,12 +41,12 @@ import {
 import { API_URL } from "@/lib/api";
 
 const pageNav = [
-  ["Sản phẩm", "/dashboard/pages/san-pham", Package],
-  ["Thuê thiết bị", "/dashboard/pages/thue-thiet-bi", Truck],
+  ["Sản phẩm & thuê", "/dashboard/pages/san-pham", Package],
   ["Tạo show", "/dashboard/pages/tao-show", CalendarPlus],
   ["Linh kiện", "/dashboard/pages/linh-kien", Boxes],
   ["Bảng giá", "/dashboard/pages/bang-gia", Tags],
   ["Thuê API", "/dashboard/pages/thue-api", Code2],
+  ["QR & Vé", "/dashboard/pages/qr-ve", QrCode],
   ["Tài liệu", "/dashboard/pages/docs", BookOpen]
 ] as const;
 

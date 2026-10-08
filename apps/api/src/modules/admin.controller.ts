@@ -190,7 +190,7 @@ export class AdminController {
         type: dto.type as ProductType,
         priceSell: dto.price_sell,
         priceRentMonth: dto.price_rent_month,
-        depositFee: dto.deposit_fee,
+        depositFee: 0,
         stock: dto.stock,
         images: dto.images as Prisma.InputJsonValue,
         specs: (dto.specs ?? {}) as Prisma.InputJsonValue
@@ -217,7 +217,6 @@ export class AdminController {
     if (dto.type !== undefined) data.type = dto.type as ProductType;
     if (dto.price_sell !== undefined) data.priceSell = dto.price_sell;
     if (dto.price_rent_month !== undefined) data.priceRentMonth = dto.price_rent_month;
-    if (dto.deposit_fee !== undefined) data.depositFee = dto.deposit_fee;
     if (dto.stock !== undefined) data.stock = dto.stock;
     if (dto.images !== undefined) data.images = dto.images as Prisma.InputJsonValue;
     if (dto.specs !== undefined) data.specs = dto.specs as Prisma.InputJsonValue;
@@ -242,8 +241,14 @@ export class AdminController {
     await this.assertAdmin(authorization);
     return this.prisma.rentalOrder.findMany({
       select: {
-        id: true, type: true, status: true, quantity: true, total: true,
-        user: { select: { email: true } }, product: { select: { name: true } }
+        id: true, type: true, status: true, quantity: true, duration: true,
+        rentFee: true, depositFee: true, installFee: true, total: true,
+        startDate: true, paymentDueAt: true, depositAmount: true, depositPercent: true,
+        remainingAmount: true, remainingPaidAmount: true, remainingPaymentStatus: true,
+        remainingPaidAt: true, depositRefundedAt: true, shippingAddress: true,
+        gateIds: true, damageNotes: true, createdAt: true, updatedAt: true,
+        user: { select: { id: true, email: true, fullName: true, phone: true, addressLine: true } },
+        product: { select: { id: true, name: true, slug: true, type: true, productType: true } }
       },
       orderBy: { createdAt: "desc" },
       take: 100
@@ -259,7 +264,7 @@ export class AdminController {
     if (!order) throw new NotFoundException("Khong tim thay don hang");
     const nextStatus = body.status as RentalStatus;
     const validForType = order.type === OrderType.RENT
-      ? [RentalStatus.PENDING, RentalStatus.PAID, RentalStatus.SHIPPED, RentalStatus.ACTIVE, RentalStatus.RETURNED, RentalStatus.CANCELLED]
+      ? [RentalStatus.PENDING, RentalStatus.DEPOSIT_PAID, RentalStatus.DEPOSIT_FORFEITED, RentalStatus.PAID, RentalStatus.SHIPPED, RentalStatus.ACTIVE, RentalStatus.RETURNED, RentalStatus.CANCELLED]
       : [RentalStatus.PENDING, RentalStatus.PAID, RentalStatus.SHIPPED, RentalStatus.CANCELLED];
     if (!validForType.includes(nextStatus)) throw new BadRequestException("Trang thai khong phu hop loai don hang");
     if ((order.status === RentalStatus.CANCELLED || order.status === RentalStatus.RETURNED) && nextStatus !== order.status) {

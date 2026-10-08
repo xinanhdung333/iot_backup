@@ -85,6 +85,15 @@ model RentalOrder {
   depositFee      Int          @map("deposit_fee")
   installFee      Int          @map("install_fee")
   total           Int
+  startDate       DateTime?      @map("start_date")
+  paymentDueAt    DateTime?      @map("payment_due_at")
+  depositAmount   Int            @default(0) @map("deposit_amount")
+  depositPercent  Int            @default(10) @map("deposit_percent")
+  remainingAmount Int            @default(0) @map("remaining_amount")
+  remainingPaidAmount Int        @default(0) @map("remaining_paid_amount")
+  remainingPaymentStatus RemainingPaymentStatus @default(PENDING) @map("remaining_payment_status")
+  remainingPaidAt DateTime?      @map("remaining_paid_at")
+  depositRefundedAt DateTime?    @map("deposit_refunded_at")
   status          RentalStatus @default(PENDING)
   shippingAddress Json         @map("shipping_address")
   gateIds         Json?        @map("gate_ids")
@@ -600,6 +609,8 @@ enum OrderType {
 
 enum RentalStatus {
   PENDING
+  DEPOSIT_PAID
+  DEPOSIT_FORFEITED
   PAID
   SHIPPED
   ACTIVE
@@ -617,6 +628,12 @@ enum TicketOrderStatus {
   PENDING
   PAID
   EXPIRED
+}
+
+enum RemainingPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
 }
 
 enum CatalogProductType {

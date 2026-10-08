@@ -89,7 +89,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/tao-show" className="btn btn-primary text-sm"><Radio size={16} /> Tao show</Link>
-          <Link href="/thue-thiet-bi" className="btn btn-secondary bg-white text-sm"><Truck size={16} /> Thue thiet bi</Link>
+          <Link href="/dashboard/pages/san-pham" className="btn btn-secondary bg-white text-sm"><Truck size={16} /> San pham & thue</Link>
           <Link href="/dashboard/scan" className="btn btn-secondary bg-white text-sm"><ScanLine size={16} /> Quet thu</Link>
         </div>
       </div>
@@ -308,7 +308,7 @@ function getMetrics(data: DashboardData) {
   const suspendedKeys = data.apiKeys.filter((key) => ["suspended", "revoked"].includes((key.status ?? "").toLowerCase())).length;
   const usedExternalQr = data.externalQrCodes.filter((qr) => qr.isUsed).length;
   const invalidScans = data.externalQrCodes.reduce((sum, qr) => sum + (qr.scanLogs ?? []).filter((log) => !log.valid).length, 0);
-  const offlineTickets = data.tickets.filter((ticketItem) => Boolean(ticketItem.qrOfflineJwt)).length;
+  const offlineTickets = data.tickets.filter((ticketItem) => ticketItem.hasOfflineQr).length;
 
   return {
     paidOrders: paidOrders.length,
